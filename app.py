@@ -932,26 +932,35 @@ c. Plani i veprimtarive mujore;
 
 """
 
-chat_history = []
+
+# Përdorimi i historikut të bisedës për çdo seancë
+def _get_history():
+    """Kthen listën e historikut nga sesioni aktual."""
+    return session.setdefault("chat_history", [])
 
 def merr_pergjigje(pyetja):
+    """Dërgon pyetjen tek API-ja dhe ruan përgjigjen në historikun e sesionit."""
+    history = _get_history()
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
     data = {
         "model": "meta-llama/llama-4-scout-17b-16e-instruct",
         "messages": [
             {"role": "system", "content": konteksti},
-            *chat_history,
-            {"role": "user", "content": pyetja}
-        ]
+            *history,
+            {"role": "user", "content": pyetja},
+        ],
     }
-    res = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data)
+    res = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data
+    )
     if res.status_code == 200:
         answer = res.json()["choices"][0]["message"]["content"]
-        chat_history.append({"role": "user", "content": pyetja})
-        chat_history.append({"role": "assistant", "content": answer})
+        history.append({"role": "user", "content": pyetja})
+        history.append({"role": "assistant", "content": answer})
+        session["chat_history"] = history
         return answer
     return f"GABIM: {res.status_code} - {res.text}"
 
@@ -961,11 +970,11 @@ def login():
     if request.method == "POST":
         kodi = request.form.get("kodi", "").strip()
         roli = request.form.get("roli")
-        print(f"DEBUG: Kodi='{kodi}', Roli='{roli}'")  # Debug në terminal
 
         if kodi == "Klasa105" and roli in ["student", "teacher", "parent"]:
             session["logged_in"] = True
             session["roli"] = roli
+            session["chat_history"] = []  # nis historikun e ri për seancën
             return redirect(url_for("chat"))
         else:
             error = "Kodi i hyrjes është i pasaktë ose nuk ke zgjedhur rolin."
@@ -977,13 +986,12 @@ def chat():
     if not session.get("logged_in"):
         return redirect(url_for("login"))
 
-    pergjigje = None
     if request.method == "POST":
         pyetja = request.form.get("pyetja")
         if pyetja:
-            pergjigje = merr_pergjigje(pyetja)
+            merr_pergjigje(pyetja)
 
-    return render_template("index.html", chat_history=chat_history)
+    return render_template("index.html", chat_history=_get_history())
 
 if __name__ == "__main__":
     app.run(debug=True)
